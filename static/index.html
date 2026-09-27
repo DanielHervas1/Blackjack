@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blackjack EV</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">♠</span>
+      <div>
+        <h1>Blackjack EV</h1>
+        <small id="rules-line">Composición exacta del zapato</small>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><span>Cartas</span><b id="st-total">–</b></div>
+      <div class="stat"><span>Barajas</span><b id="st-decks">–</b></div>
+      <div class="stat"><span>Penetr.</span><b id="st-pen">–</b></div>
+      <div class="stat"><span>RC</span><b id="st-rc">–</b></div>
+      <div class="stat"><span>True count</span><b id="st-tc">–</b></div>
+      <div class="stat"><span>Ventaja</span><b id="st-adv">–</b></div>
+    </div>
+    <div class="top-actions">
+      <label class="engine" title="Motor de cálculo">
+        <span>Motor</span>
+        <select id="engine-mode">
+          <option value="auto">Auto</option>
+          <option value="exact">Exacto</option>
+          <option value="ml">ML</option>
+        </select>
+        <b id="engine-badge" class="badge">–</b>
+      </label>
+      <button id="btn-undo-round" class="ghost" title="Devolver al zapato la última ronda descartada">↶ Ronda</button>
+      <button id="btn-settings" class="ghost">⚙ Reglas</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ================= ENTRADA RÁPIDA ================= -->
+    <section class="input-col">
+      <div class="zones">
+        <div class="zone" data-zone="player">
+          <div class="zone-head"><span>Mis Cartas <kbd>M</kbd></span><b class="zone-total" id="player-total"></b></div>
+          <div class="chips" id="chips-player"></div>
+        </div>
+        <div class="zone" data-zone="dealer">
+          <div class="zone-head"><span>Crupier <kbd>D</kbd></span></div>
+          <div class="chips" id="chips-dealer"></div>
+        </div>
+        <div class="zone" data-zone="table">
+          <div class="zone-head"><span>Mesa / Descarte <kbd>X</kbd></span><b class="zone-total" id="table-count"></b></div>
+          <div class="chips" id="chips-table"></div>
+        </div>
+      </div>
+
+      <div class="keypad" id="keypad"></div>
+
+      <div class="round-actions">
+        <button id="btn-undo" class="ghost">⌫ Deshacer</button>
+        <button id="btn-clear" class="ghost">Limpiar <kbd>Esc</kbd></button>
+        <button id="btn-new-round" class="ghost">Nueva ronda <kbd>Enter</kbd></button>
+        <button id="btn-save" class="primary">Guardar mano y limpiar mesa <kbd>G</kbd></button>
+      </div>
+      <p class="hint">
+        Teclado: <kbd>2</kbd>–<kbd>9</kbd>, <kbd>0</kbd>/<kbd>T</kbd>/<kbd>J</kbd>/<kbd>Q</kbd>/<kbd>K</kbd> = 10, <kbd>A</kbd>/<kbd>1</kbd> = As ·
+        <kbd>Tab</kbd> cambia de zona · clic en una carta para quitarla.
+        Mesa/Descarte = cartas de otros jugadores, quemadas y las del crupier al final de la ronda.
+      </p>
+    </section>
+
+    <!-- ================= RESULTADOS ================= -->
+    <section class="result-col">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Decisión óptima</h2>
+          <span class="timing" id="timing"></span>
+        </div>
+        <div id="recommendation" class="recommendation empty">Introduce tu mano y la carta del crupier</div>
+        <p id="explanation" class="explanation hidden"></p>
+        <ul id="actions" class="actions"></ul>
+        <div id="insurance" class="insurance hidden"></div>
+        <div id="ml-outcome" class="muted hidden"></div>
+      </div>
+
+      <details class="panel" data-key="dealer" open>
+        <summary><h2>Análisis del crupier</h2><span class="muted" id="dealer-bj"></span></summary>
+        <div id="dealer-probs" class="bars"></div>
+        <p class="legend">
+          <span class="dot red"></span>supera tu mano
+          <span class="dot yellow"></span>empata
+          <span class="dot green"></span>inferior o se pasa
+        </p>
+      </details>
+
+      <details class="panel" data-key="kelly" open>
+        <summary><h2>Apuesta · Kelly</h2><span class="muted" id="kelly-summary"></span></summary>
+        <div class="kelly">
+          <div class="kelly-main">
+            <div><span class="muted">Ventaja estimada</span><b id="kelly-adv">–</b><small id="kelly-adv-detail" class="muted"></small></div>
+            <div><span class="muted">Apuesta recomendada</span><b id="kelly-bet">–</b><small id="kelly-bet-detail" class="muted"></small></div>
+          </div>
+          <div class="kelly-inputs">
+            <label>Bankroll <input type="number" id="k-bankroll" min="0" step="10"></label>
+            <label>Fracción
+              <select id="k-fraction">
+                <option value="1">Kelly completo</option>
+                <option value="0.5">½ Kelly</option>
+                <option value="0.25">¼ Kelly</option>
+                <option value="0.1">⅒ Kelly</option>
+              </select>
+            </label>
+            <label>Mínima <input type="number" id="k-min" min="0" step="1"></label>
+            <label>Máxima <input type="number" id="k-max" min="0" step="1"></label>
+          </div>
+          <div class="kelly-exact">
+            <button id="btn-exact-adv" class="ghost">Calcular ventaja exacta (≈3 s)</button>
+            <span id="exact-adv" class="muted"></span>
+          </div>
+        </div>
+      </details>
+
+      <details class="panel" data-key="deck">
+        <summary><h2>Composición del zapato</h2><span class="muted">restantes · desviación vs. neutro</span></summary>
+        <div id="deck" class="deck"></div>
+      </details>
+
+      <details class="panel" data-key="history" id="history-panel">
+        <summary><h2>Historial de sesión</h2><span class="muted" id="history-summary"></span></summary>
+        <div class="history-wrap">
+          <table class="history">
+            <thead><tr><th>#</th><th>Hora</th><th>Mano</th><th>Crup.</th><th>TC</th><th>Recom.</th><th>Tomada</th><th>Result.</th><th>Neto</th><th></th></tr></thead>
+            <tbody id="history-body"></tbody>
+          </table>
+        </div>
+        <p class="muted">Cada mano se guarda en <code>history.db</code> con las mismas features que usa el modelo; <code>train_model.py</code> la incorpora al re-entrenar.</p>
+      </details>
+
+      <details class="panel theory" data-key="theory">
+        <summary><h2>Teoría</h2><span class="muted">EV, Win% y composición exacta</span></summary>
+        <h3>EV frente a porcentaje de victoria</h3>
+        <p><b>EV (valor esperado)</b> es lo que ganas o pierdes de media por unidad apostada:
+          <code>EV = Σ probabilidad × pago</code>. Un EV de −0,15 significa que, a la larga, esa decisión te cuesta
+          0,15 unidades por cada unidad apostada.</p>
+        <p><b>Win%</b> sólo cuenta cuántas veces ganas, pero ignora <i>cuánto</i> ganas o pierdes y los empates. Por eso puede engañar:</p>
+        <ul>
+          <li><b>Doblar</b> 11 contra 6 gana aproximadamente el mismo % de manos que pedir, pero cobra el doble: su EV es mucho mayor.</li>
+          <li><b>Rendirse</b> tiene 0 % de victorias y aun así es óptimo cuando jugar la mano cuesta más de media apuesta (EV &lt; −0,5).</li>
+          <li><b>Plantarse con 16</b> contra un 10 puede ganar más a menudo que pedir y aun así tener peor EV (o al revés): lo que cuenta es la suma ponderada de todos los resultados.</li>
+        </ul>
+        <p>La app ordena siempre por EV y muestra el Win/Push/Loss de cada acción como información complementaria.</p>
+
+        <h3>Por qué la composición exacta cambia la estrategia básica</h3>
+        <p>La <b>estrategia básica</b> es la mejor decisión calculada para un zapato <i>neutro</i> (recién barajado). Cada carta que sale
+          altera las probabilidades de las siguientes: si han salido muchas cartas bajas quedan más dieces, el crupier se pasa más con
+          2–6 y tus dobles valen más; si han salido dieces ocurre lo contrario.</p>
+        <p>Este motor no usa tablas: recalcula de forma recursiva y exacta las probabilidades del crupier y el EV de cada acción
+          <b>con las cartas que realmente quedan</b>, incluyendo el efecto de cada carta que tú mismo robarías. Cuando la decisión óptima
+          difiere de la de un zapato neutro, la explicación lo marca con <b>⚠ Desviación de la estrategia básica</b>.
+          Ejemplos clásicos: plantarse con 16 contra 10 con true count ≥ 0, asegurar con TC ≥ +3, plantarse con 12 contra 3 con TC alto.</p>
+        <p>El <b>true count</b> (Hi-Lo) es un resumen aproximado de la composición; el cálculo exacto usa la composición completa,
+          así que capta efectos que el conteo no ve (por ejemplo, un exceso de ases o de sietes).</p>
+
+        <h3>Reglas</h3>
+        <ul>
+          <li><b>H17</b>: el crupier pide con 17 blando → ≈ −0,22 % para el jugador.</li>
+          <li><b>DAS</b>: doblar tras separar → ≈ +0,14 %.</li>
+          <li><b>ENHC</b> (sin carta oculta): si el crupier saca blackjack pierdes también lo doblado y separado → ≈ −0,11 %, y se dobla o separa menos contra A y 10.</li>
+        </ul>
+
+        <h3>Criterio de Kelly</h3>
+        <p>La apuesta que maximiza el crecimiento del bankroll es <code>f* = ventaja / varianza</code> (varianza del blackjack ≈ 1,33).
+          Con ventaja negativa se apuesta el mínimo. El <b>Kelly fraccional</b> (½, ¼) sacrifica algo de crecimiento a cambio de reducir mucho
+          la volatilidad y el riesgo de ruina. La ventaja se estima con los efectos de eliminación de cada carta sobre la ventaja exacta del
+          zapato neutro; el botón de ventaja exacta calcula el EV de la ronda completa con el motor.</p>
+
+        <h3>Motor exacto frente a ML</h3>
+        <p>El modelo de <code>train_model.py</code> aprende los EV del motor exacto sobre miles de zapatos simulados. Es una aproximación:
+          útil como demostración de baja latencia, pero el motor exacto ya responde en milisegundos y es siempre la referencia.</p>
+      </details>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ================= GUARDAR MANO ================= -->
+  <dialog id="save-dialog">
+    <form method="dialog" id="save-form">
+      <h2>Guardar mano</h2>
+      <p id="save-summary" class="save-summary"></p>
+      <div class="field">
+        <span class="muted">Acción tomada</span>
+        <div class="seg" id="seg-action">
+          <button type="button" data-v="Hit">Pedir <kbd>H</kbd></button>
+          <button type="button" data-v="Stand">Plantarse <kbd>S</kbd></button>
+          <button type="button" data-v="Double">Doblar <kbd>D</kbd></button>
+          <button type="button" data-v="Split">Separar <kbd>P</kbd></button>
+          <button type="button" data-v="Surrender">Rendirse <kbd>R</kbd></button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="muted">Resultado</span>
+        <div class="seg" id="seg-result">
+          <button type="button" data-v="win">Gano <kbd>W</kbd></button>
+          <button type="button" data-v="push">Empate <kbd>E</kbd></button>
+          <button type="button" data-v="loss">Pierdo <kbd>L</kbd></button>
+          <button type="button" data-v="blackjack">Blackjack <kbd>B</kbd></button>
+          <button type="button" data-v="surrender">Rendido</button>
+        </div>
+      </div>
+      <div class="field row">
+        <label>Apuesta <input type="number" id="save-bet" min="0" step="1"></label>
+        <label>Neto (unidades) <input type="number" id="save-net" step="0.5"></label>
+      </div>
+      <div class="dialog-actions">
+        <button value="cancel" class="ghost" formnovalidate>Cancelar</button>
+        <button value="save" class="primary" id="btn-save-confirm">Guardar y limpiar <kbd>Enter</kbd></button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ================= REGLAS ================= -->
+  <dialog id="settings">
+    <form method="dialog" id="settings-form">
+      <h2>Reglas de la mesa</h2>
+      <label>Barajas <input type="number" name="num_decks" min="1" max="8" value="6"></label>
+      <label class="check"><input type="checkbox" name="enhc"> European No Hole Card (ENHC)</label>
+      <label class="check"><input type="checkbox" name="dealer_hits_soft17"> El crupier pide con 17 blando (H17)</label>
+      <label class="check"><input type="checkbox" name="double_after_split" checked> Doblar tras separar (DAS)</label>
+      <label class="check"><input type="checkbox" name="surrender"> Rendición tardía</label>
+      <label>Pago del blackjack
+        <select name="blackjack_payout">
+          <option value="1.5">3:2</option>
+          <option value="1.2">6:5</option>
+          <option value="1">1:1</option>
+        </select>
+      </label>
+      <p class="muted">Aplicar baraja de nuevo el zapato (se pierde el tracking actual, no el historial).</p>
+      <div class="dialog-actions">
+        <button value="cancel" class="ghost">Cancelar</button>
+        <button value="apply" class="primary">Aplicar y nuevo zapato</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>

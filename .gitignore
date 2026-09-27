@@ -4,3 +4,10 @@ node_modules/
 .next/
 dist/
 build/
+__pycache__/
+*.pyc
+*.pkl
+*.db
+.env
+venv/
+.venv/
